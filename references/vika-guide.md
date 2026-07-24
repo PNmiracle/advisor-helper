@@ -473,6 +473,11 @@ After DELETE or PATCH, subsequent GET requests may return stale data from an API
 
 See section 4.2 above. URL-type fields require field IDs without `fieldKey` parameter.
 
+### 回读验证的两个陷阱（2026-07-17 实战教训）
+
+1. **GET 回读必须用字段名，不能用 field ID**。PATCH 用 `fieldKey="id"` 写入后，GET（不带 fieldKey 参数）返回的 fields 字典是**字段名键**。用 `fields.get("fldXXX")` 读取永远是 None，会误判写入失败。
+2. **用户可能在两次会话之间改了字段名**（例如 `导师主页` → `导师主页（⭐️看这里）`）。字段 ID 不变，写入照常成功，但按旧字段名回读会得到 None，造成"写入没生效"的假象。**批量写入前后都应重新拉一次 `GET /fields` 确认当前字段名**，回读以字段名为准。判读写入是否成功的可靠依据：PATCH 响应体回显的字段值 + 按当前字段名 GET 的值一致。
+
 ---
 
 ## 13. Rate Limits & Best Practices

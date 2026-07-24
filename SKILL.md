@@ -138,7 +138,7 @@ locked = [r for r in all_records if r["fields"].get("选导意向（点击选择
    - **国内学校**：走「国内学校选导规则」子章节（招生目录优先 → A/B/C 分类 → 邮箱必填 → 主页要求）
 7. 使用 `references/spreadsheet-rules.md` 填写表格
    - **国内学校**：额外遵守「国内学校表格规则」子章节（导师联系方式必填、主页来源要求、备注链接格式）
-8. **写入后立即设置学校关联字段**（见「学校关联字段必填」规则）：确定学校→查找/创建主表记录→设置OneWayLink→验证Location/QS已同步
+8. **写入后立即设置学校关联字段**（见「学校关联字段必填」规则）：确定学校→查找/创建主表记录→设置OneWayLink→验证Location/QS/国内学校层次已同步
 9. 没找到合适导师的学校记录排除原因
 
 ---
@@ -322,6 +322,26 @@ WorkBuddy 不能打开真实浏览器，但可以通过以下方式验证：
 
 **经典案例（2026-07-13）**：CUHK STA 的 `/people/faculty/{name}/` 所有 URL 返回完全相同的 114KB 首页 HTML（SPA 壳），浏览器 JS 加载后才显示个人内容。正确格式是 `/peoples/{slug}/`（静态 HTML，可直接验证研究方向）。详见 `references/school-strategies.md` CUHK 章节。
 
+**经典案例（2026-07-23）**：HKUST(GZ) 的 `facultyprofiles.hkust-gz.edu.cn` 全站 SPA，所有页面返回完全相同的 1522 字节 HTML 壳。URL 格式从 `?name=XXX` 查询参数改为 `/faculty-personal-page/NAME/shortname` 路径格式，但两种格式的 SPA 行为一致。自动化工具无法区分旧 URL 失效和新 URL 有效——200 ≠ 内容正确，必须浏览器人工确认。DSA 学域的替代来源为 `dsa.hkust-gz.edu.cn/blog/YYYY/MM/DD/name-slug`（WordPress 格式，可直接抓取内容）。
+
+### CUHK(SZ) 特殊规则：教师 URL ID 不稳定（2026-07-23 验证）
+
+CUHK(SZ) 数据科学学院的 `sds.cuhk.edu.cn/teacher/XXX` 的 ID 不是稳定标识符。2026 年 7 月的大规模重组中，同一学院的教授被分散到多个子域名和路径格式：
+
+| 变化类型 | 示例 | 旧 URL | 新 URL |
+|----------|------|--------|--------|
+| teacher ID 变更 | 李爽 | `/teacher/273` | `/teacher/472` |
+| 路径格式切换 | 王子卓 | `/teacher/254` | `/node/59` |
+| 跨子域名迁移 | 罗智泉 | `sds.cuhk.edu.cn/teacher/478` | `sse.cuhk.edu.cn/teacher/184` |
+| 个人网站 | 丁宏强 | `sds.cuhk.edu.cn/teacher/378` | `myweb.cuhk.edu.cn/chrisding/Home/Index` |
+
+**关键规则**：
+
+1. **每次会话重新搜索**：不信任上次存储的 teacher ID，使用 WebSearch 搜索 `"[导师名] sds.cuhk.edu.cn teacher"` 找新 ID
+2. **不能按旧 ID 推断新 ID**：ID 变更无明显规律（不是简单递增/递减）
+3. **多种 URL 格式并存**：同一学院同时存在 `/teacher/XXX`、`/node/XXX`、`myweb.cuhk.edu.cn`、`gklbdc.cuhk.edu.cn`、`sse.cuhk.edu.cn`、`mscfe.cuhk.edu.cn` 等多种格式，每种都需独立搜索验证
+4. **Python SSL 握手失败 ≠ 链接失效**：`sds.cuhk.edu.cn` 在 Python urllib 中报 `SSLV3_ALERT_HANDSHAKE_FAILURE`，但 WebFetch 和浏览器可以正常访问。先用 WebFetch 测，再判死
+
 ### 导师主页必须是个人 URL
 
 禁止使用通用院系列表页。每位导师必须有自己唯一的个人主页 URL。
@@ -427,7 +447,7 @@ CityU 有两种导师主页 URL 格式：
 1. **stfprofile 格式**（推荐优先使用）：`https://www.cityu.edu.hk/stfprofile/xxx.htm`
    - 部分旧版教授页面使用此格式
    - 自动化访问返回 Incapsula JS 挑战页（约 200-1000 字节）
-   
+
 2. **scholars 格式**：`https://scholars.cityu.edu.hk/en/persons/xxx/`
    - Pure Portal 全校统一入口，信息更完整
    - 自动化访问返回 403
@@ -665,7 +685,6 @@ Patch 后重新 GET 记录，确认 `Location`、`QS排名`、`国内学校层�
 - 禁止在未翻页遍历全部主表记录前就判断"学校不存在"并创建
 - 禁止 OneWayLink 值写成字符串而非数组
 
-
 **常见错误**：
 - 不识别学生类型 → 用错字段名 → API 报错或写入无效字段
 - OneWayLink 值写成字符串而非数组 → API 报错 → 链接未生效
@@ -709,6 +728,89 @@ Patch 后重新 GET 记录，确认 `Location`、`QS排名`、`国内学校层�
 | 老学生主表有 100 条硬限制（旧表） | 旧 QS/US 主表写入 >100 条时静默丢弃 | 不重新验证 GET；主表只增不删 |
 | CDU/CDU 等小型大学研究人员页 404 | RD3 确认有效后 RD4 再查变 404 | 交付前逐条复验所有链接，不信任上一轮验证结果 |
 | 备注中 SPA 标注和匹配标识混在同一段 | `Macquarie为SPA系统需浏览器验证；可以备选一下呢～` | SPA 标注放在第二段末尾，第三段仅放匹配标识 |
+| CUHK(SZ) teacher ID 跨会话失效 | 上次存的 `/teacher/254` 已变 `/node/59`、`/teacher/273`→`/teacher/472` | 每次会话重新 WebSearch 搜新 ID，不信任历史 URL |
+| HKUST(GZ) SPA 全站 1522B 壳 | 新旧 URL 格式均返回相同字节数，自动化无法判定有效性 | 标记 SPA，提示浏览器确认；同步搜索 DSA 博客替代来源 |
+| Python SSL 失败当 404 | `sds.cuhk.edu.cn` Python urllib 报 handshake failure | 换 WebFetch 验证，不直接判死 |
+| Vika URL 字段 PATCH 静默失败 | `fieldKey="name"` 返回 200 但 URL 未更新 | 必须 `fieldKey="id"` + 字段 ID |
+| PATCH 后回读键名错误 | GET 返回字段名键，用 field ID 读永远 None | PATCH 前后各拉字段列表，回读用字段名 |
+
+---
+
+## 链接修复工作流（用户说"链接打不开/404"时触发）
+
+当用户反馈已有表格中某学校/学院的导师链接大面积失效时，按以下步骤系统修复：
+
+### 步骤 1：诊断区分失效类型
+
+用 curl/WebFetch 逐一检查每个链接的状态，区分三类情况：
+
+| 类型 | 症状 | 说明 |
+|------|------|------|
+| 真 404 | HTTP 404 + 页面标题含"404" | URL 确实失效，需搜索新链接 |
+| SPA 壳 | 200 + 所有 URL 返回相同字节数 + 无实际教授信息 | 站点是 JavaScript 渲染，自动化无法判断 |
+| WAF/SSL 拦 | 403 / SSL 握手失败 / 超时 | 防护机制干扰，需换工具验证 |
+
+### 步骤 2：按学校搜索新 URL
+
+不要逐个导师搜，先搜学校的教师目录页找全员新链接格式，再针对性补充搜索：
+
+```python
+# 批量搜索语法示例
+for name in broken_professors:
+    WebSearch(f'"{name}" sds.cuhk.edu.cn teacher OR node')
+```
+
+**CUHK(SZ) 搜索技巧**：
+- 搜 `"[导师名] sds.cuhk.edu.cn teacher"` 找标准 teacher 页
+- 搜 `"[导师名] cuhk.edu.cn"` 发现跨子域名迁移（myweb/gklbdc/sse/mscfe）
+- 搜 `"[导师名] sds.cuhk.edu.cn node"` 发现 node 格式页面
+
+**HKUST(GZ) 搜索技巧**：
+- 搜 `"dsa.hkust-gz.edu.cn [导师名] faculty blog"` 找 WordPress 格式替代页
+- `facultyprofiles.hkust-gz.edu.cn` 是纯 SPA，自动化只能确认 200，无法确认内容
+- 若 DSA 博客有个人页则优先使用（可自动化验证内容）
+
+### 步骤 3：写入前逐条 WebFetch 验证
+
+每个候选 URL 必须用 WebFetch 打开，验证能显示：
+- ✅ 导师姓名、职称
+- ✅ 研究方向
+- ✅ 院系归属
+
+出现以下任一情况即判定无效：
+- ❌ 404 / 页面未找到
+- ❌ 只有导航栏/空壳（SPA）
+- ❌ 显示的是其他不相关人员
+
+### 步骤 4：Vika PATCH 修复
+
+```python
+# URL 字段 PATCH 必须 fieldKey="id"
+fields = vika("GET", "/fields")
+homepage_fid = next(f["id"] for f in fields["data"]["fields"] if '导师主页' in f['name'])
+
+updates = [{"recordId": rid, "fields": {homepage_fid: new_url}} for rid, new_url in fixes.items()]
+
+for i in range(0, len(updates), 10):
+    vika("PATCH", "/records", {"records": updates[i:i+10], "fieldKey": "id"})
+```
+
+### 步骤 5：PATCH 后回读验证
+
+```python
+# 回读时必须用字段名（不是 field ID）
+verified = vika("GET", f"/records?recordIds={','.join(fixed_ids)}")
+for r in verified['data']['records']:
+    # ✅ 正确：用字段名读取
+    url = r['fields'].get('导师主页', '')
+    # ❌ 错误：用 field ID 读取 → 永远 None
+    # url = r['fields'].get(homepage_fid, '')
+```
+| CUHK(SZ) teacher ID 跨会话失效 | 上次存的 `/teacher/254` 已变 `/node/59`、`/teacher/273` 变 `/teacher/472` | 每次会话重新 WebSearch 搜索新 ID，不信任旧 ID |
+| HKUST(GZ) SPA 全站 1522B 壳 | 新旧 URL 格式均返回相同字节数，自动化无法判定有效性 | 标记为 SPA，提示用户浏览器确认；同步搜索 DSA 博客替代来源 |
+| Python SSL 失败当链接失效 | `sds.cuhk.edu.cn` Python urllib 报 handshake failure | 换 WebFetch 验证，不直接判 404 |
+| Vika URL 字段 PATCH 静默失败 | `fieldKey="name"` 写入 URL 字段返回 200 但未更新 | 必须用 `fieldKey="id"` + 字段 ID（非字段名） |
+| PATCH 后回读用错键名 | GET 返回字段名键，但用 field ID 去读永远 None | PATCH 前后各拉一次字段列表，回读用当前字段名 |
 
 ---
 

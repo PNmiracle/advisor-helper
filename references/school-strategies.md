@@ -794,6 +794,62 @@ Format: Architecture + Layer + Access method + Endpoints + Failures
 - **Failed**: All curl → 403; search blocked; faculty directory 403
 - **Last verified**: 2026-06-26
 
+#### Columbia University — Engineering (APAM / IEOR)
+- **Architecture**: Cloudflare challenge ("Just a moment..." JS page) on ALL Columbia web properties except `math.columbia.edu` — includes `apam/ieor.columbia.edu`, `engineering.columbia.edu`, and even `www.columbia.edu/~netid` personal pages
+- **Layer**: L3
+- **Access**: Browser ONLY; 403 challenge ≠ dead link. Verify live URLs via WebSearch (search engines index full content); confirm exact slug from search result URLs
+- **2026-07 consolidation**: Engineering profiles moved from department sites to the central directory `www.engineering.columbia.edu/faculty-staff/directory/{slug}` (alias: `engineering.columbia.edu/faculty/{slug}`). Old `apam.columbia.edu/people/{slug}`, `apam/ieor.columbia.edu/faculty/{slug}` 404 in browser. APAM also has new root-level profiles `apam.columbia.edu/{slug}` (e.g. `/liliana-borcea`); APAM directory: `apam.columbia.edu/directory`. Some IEOR profiles still live at `ieor.columbia.edu/faculty/{slug}` (Sigman, Xunyu Zhou, Dieker) — mixed state, prefer the central engineering directory
+- **Last verified**: 2026-07-17
+
+#### Columbia University — Mathematics
+- **Architecture**: Static HTML (NO WAF — the only Columbia property directly accessible)
+- **Layer**: L1
+- **Access**: Profile pattern `https://www.math.columbia.edu/people/faculty-by-rank/name/{slug}/` (trailing slash; verified for Corwin/Dubedat/Knizel/Karatzas/Nutz)
+- **Note**: Old `/people/directory/name/{slug}` and `/people/directory/char/F/2` paths are dead/redirected. Faculty list: `/people/faculty-by-rank/`. Personal sites `math.columbia.edu/~{name}/` also work (no WAF)
+- **Last verified**: 2026-07-17
+
+#### Cornell University — ORIE (Duffield Engineering)
+- **Architecture**: Static HTML, site migrated mid-2026
+- **Layer**: L1
+- **Access**: `https://www.duffield.cornell.edu/people/{slug}/`
+- **Key endpoint**: https://www.duffield.cornell.edu/orie/faculty-staff/
+- **Note**: Old `orie.cornell.edu/people/{slug}` URLs all 404; old `/faculty-directory/{slug}` and `engineering.cornell.edu/faculty-directory/{slug}` redirect to duffield. Some slugs include middle name: `andreea-c-minca`, `robert-a-jarrow`, `david-alan-goldberg`. Faculty-staff list page doubles as title reference (Professor/Associate/Assistant).
+- **Last verified**: 2026-07-17
+
+#### UT Austin — Mathematics
+- **Architecture**: Static HTML, directory migrated
+- **Layer**: L1
+- **Access**: `https://math.utexas.edu/directory/{firstname-lastname}`
+- **Note**: Old `/people/faculty-directory/{slug}` redirects to generic `/directory` (soft-404 for individuals); old `www.ma.utexas.edu/component/cobalt/item/...` URLs redirect correctly but are outdated. Faculty list: `https://math.utexas.edu/directory`.
+- **Last verified**: 2026-07-17
+
+#### University of Chicago — Statistics vs Mathematics
+- **Architecture**: Static HTML
+- **Layer**: L1
+- **Access**: `https://stat.uchicago.edu/people/profile/{slug}/` for Stats appointments ONLY — Math-only faculty (Lawler, Souganidis) 404 there
+- **Note**: Math dept personal pages live at `https://math.uchicago.edu/~{name}/` (small static sites, valid). Joint appointments (Gwynne) have stat profiles. `mathematics.uchicago.edu/people/faculty/` is 404 — do not guess it. CAM program: `cam.uchicago.edu` (occasional SSL flakiness, retry).
+- **Last verified**: 2026-07-17
+
+#### Stanford University — Mathematics / ICME / MS&E
+- **Architecture**: Static HTML + Stanford Profiles (profiles.stanford.edu)
+- **Layer**: L1
+- **Access**: Faculty list `https://mathematics.stanford.edu/people/faculty-lecturers` (bare `/people` redirects to department-administration, wrong page)
+- **Warning**: `profiles.stanford.edu/{firstname-lastname}` matches SAME-NAME people in other departments — e.g. `profiles.stanford.edu/daniel-spielman` is a Radiology professor, NOT the Yale CS Spielman. Always verify the page's stated department before using.
+- **Last verified**: 2026-07-17
+
+#### McGill University — Mathematics & Statistics
+- **Architecture**: Static HTML (mathstat site, unlike Psychology's Incapsula)
+- **Layer**: L1
+- **Access**: `https://www.mcgill.ca/mathstat/{slug}` — slug may include middle initial (e.g. `eric-d-kolaczyk`); bare `firstname-lastname` 404s
+- **Last verified**: 2026-07-17
+
+#### UCLA — Mathematics
+- **Architecture**: Static HTML, NO WAF
+- **Layer**: L1
+- **Access**: Personal pages `https://www.math.ucla.edu/~{name}/`
+- **Trap**: `www.math.ucla.edu/people/ladder/{slug}` profile pages are **soft-404 empty shells** — all return the same ~12KB generic department template (title "UCLA Department of Mathematics", zero personal content) for every slug, real or not. 200 status means nothing here; check page content. Verified shells: cucuringu, andrea-bertozzi, shlyakhtenko, gangbo, killip. Working personal pages: `~mihai/`, `~bertozzi/`, `~shlyakht/` (Shlyakhtenko), `~wgangbo/` (Gangbo), `~killip/`, `~deanna/` (Needell), `seas.ucla.edu/~vandenbe` (Vandenberghe)
+- **Last verified**: 2026-07-17
+
 ---
 
 ## Know-How: People Who Changed Institutions
@@ -810,6 +866,8 @@ Record of faculty moves discovered during verification. Check this before assumi
 | Erik Wengström | QUT | Lund University | ~2024 |
 | Warren Mansell | Manchester | Curtin University | — |
 | Neil Stewart | Warwick Psychology | Warwick Business School | — |
+| Mihai Cucuringu | Oxford Statistics (Assoc Prof) | UCLA Mathematics (full Professor) | 2025-01 |
+| Daniel Spielman (CS) | Yale (Sterling Professor, still there) | NOT at Stanford — Stanford profile with same name is a Radiologist | — |
 
 ## Know-How: URL Quality Gate
 
