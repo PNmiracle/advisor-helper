@@ -612,57 +612,112 @@ data = {'records': [{'fields': {
 vika('POST', f'/datasheets/dstd7iuffLGUbSnavd/records', data)
 ```
 
-#### 第三步：在主表中查找/创建学校（⚠️ 必须翻页到底，不可只查 200 条）
+#### 第三步：在主表中查找学校（⚠️ 多层模糊搜索 → 搜不到就停，禁止自建）
 
 > **教训（2026-07-20）**：主表实际有 2200+ 条学校记录，`pageSize=200` 只返回第一页。
 > 不翻页会误判学校不存在 → 创建重复 → 后续维护混乱。
-> **必须用 `pageNum` 翻页直到 `len(records) >= total`，确认遍历全部记录后再决定是否新建。**
+> **必须用 `pageNum` 翻页直到 `len(records) >= total`，确认遍历全部记录后再判断。**
+
+> **教训（2026-07-24）**：精确匹配 `"University of Exeter"` 搜不到主表中的 `"The University of Exeter"`（少了 The）。
+> 搜索必须分多层：精确 → 模糊 → 缩写 → 多候选确认 → 搜不到就停。
+> **绝对禁止在主表 POST 新建学校。** 搜不到就告诉用户去补，等用户补完再继续。
+
+**搜索策略（四层，逐层兜底）：**
+
+| 层 | 策略 | 适用场景 | 搜到多个怎么办 |
+|----|------|----------|---------------|
+| L1 | 精确匹配 `学校全称` / `学校中文名` | 已知完整名 | 不会多（精确匹配唯一） |
+| L2 | 大小写不敏感子串匹配 `lower(学校全称)` in `lower(target)` OR `lower(target)` in `lower(学校全称)` | The/University 等前缀差异 | **列出所有候选让用户选** |
+| L3 | 匹配 `学校英文缩写`（如 UW-Madison、Exeter） | 名称差异较大时 | **列出所有候选让用户选** |
+| L4 | 搜不到 | 学校确实不在主表 | **停下来告诉用户，绝不 POST** |
+
+> **美国学校特别注意**：L2 子串匹配可能搜出多个同名分校（如 "University of California" 匹配到 UC Berkeley、UC Davis、UCLA 等）。当候选 > 1 时，必须列出全名 + recordId 让用户确认。
 
 ```python
 def find_school_by_name(main_table_id, school_name, mode='new'):
-    """翻页遍历全部主表记录，按名字查找学校。mode: 'new' 或 'old'"""
+    """翻页遍历全部主表记录，分层查找学校。搜不到返回None让用户自己补。"""
     name_field = '学校全称' if mode == 'new' else '学校'
+    all_records = []
     page = 1
     while True:
         r = vika('GET', f'/datasheets/{main_table_id}/records?pageSize=500&pageNum={page}&cellFormat=string')
-        for rec in r['data']['records']:
-            if rec['fields'].get(name_field) == school_name:
-                return rec['recordId'], rec['fields']
-            # 新学生表还支持中文名校准
-            if mode == 'new' and rec['fields'].get('学校中文名') == school_name:
-                return rec['recordId'], rec['fields']
+        all_records.extend(r['data']['records'])
         total = r['data']['total']
         if len(r['data']['records']) < 500 or page * 500 >= total:
             break
         page += 1
-    return None, None
+    
+    # L1: 精确匹配
+    for rec in all_records:
+        if rec['fields'].get(name_field) == school_name:
+            return [rec['recordId']]  # 返回单个候选的列表
+        if mode == 'new' and rec['fields'].get('学校中文名') == school_name:
+            return [rec['recordId']]
+    
+    # L2: 大小写不敏感子串匹配
+    target_lower = school_name.lower()
+    candidates = []
+    for rec in all_records:
+        full = (rec['fields'].get(name_field) or '').lower()
+        cn = (rec['fields'].get('学校中文名') or '').lower()
+        if target_lower in full or full in target_lower or target_lower in cn or cn in target_lower:
+            candidates.append(rec)
+    
+    if candidates:
+        # 去重（可能有中文名和英文名指向同一条）
+        seen = set()
+        unique = []
+        for rec in candidates:
+            if rec['recordId'] not in seen:
+                seen.add(rec['recordId'])
+                unique.append(rec)
+        if len(unique) == 1:
+            return [unique[0]['recordId']]
+        else:
+            # 多个候选 → 必须让用户选
+            return [(r['recordId'], r['fields'].get(name_field, '?')) for r in unique]
+    
+    # L3: 英文缩写匹配
+    candidates = []
+    for rec in all_records:
+        abbr = (rec['fields'].get('学校英文缩写') or '').lower()
+        if abbr and abbr in target_lower:
+            candidates.append(rec)
+    if candidates:
+        return [(r['recordId'], r['fields'].get(name_field, '?')) for r in candidates]
+    
+    # L4: 搜不到 → 停下来
+    return None  # 告诉用户：学校不在主表，请手动添加后再继续
 ```
 
-#### 第四步：创建学校记录（仅在确认不存在时）
-
-第三步搜不到才创建。新老学生字段名不同，按模式选择：
-
+**使用方式**：
 ```python
-if mode == 'new':
-    data = {'records': [{'fields': {
-        '学校全称': '广州大学',
-        '学校中文名': '广州大学',
-        '学校英文缩写': 'GU',
-        '国家/地区': 'China (Mainland)',
-        '所在大洲': 'Asia',
-        '国内学校层次': '双一流',
-        '国内学校所在省份': '广东省',
-    }}], 'fieldKey': 'name'}
-elif mode == 'old':
-    data = {'records': [{'fields': {
-        '学校': 'Ghent University',
-        '排名': 159,
-        'Location': 'Belgium',
-        '地区': 'Europe',
-    }}], 'fieldKey': 'name'}
-resp = vika('POST', f'/datasheets/{main_table_id}/records', data)
-school_rid = resp['data']['records'][0]['recordId']
+result = find_school_by_name(main_table_id, "University of Exeter", mode='new')
+if result is None:
+    # 搜不到 → 告诉用户，停止操作
+    print("学校 'University of Exeter' 不在主表中，请先在主表手动添加。")
+elif isinstance(result[0], tuple):
+    # 多个候选 → 让用户选
+    print(f"搜到 {len(result)} 个匹配：")
+    for rid, name in result:
+        print(f"  {rid}: {name}")
+else:
+    # 唯一匹配 → 直接用
+    school_rid = result[0]
 ```
+
+#### 第四步：搜不到学校时 — 停下来，不要自建 🚫
+
+第三步搜不到学校时，**绝对不要在主表 POST 新建**。改为：
+
+1. 把导师记录先写入选导表（不含学校关联）
+2. 告诉用户："XX 学校不在主表中，请手动添加"
+3. 等用户补完学校后，再设置 OneWayLink
+
+**禁止事项（新增）**：
+- 🚫 **绝对禁止**对主表执行 POST/PATCH/DELETE 操作（即使 API token 有权限）
+- 🚫 **绝对禁止**用 `vika('POST', f'/datasheets/{main_table_id}/...')` 在任何路径下创建学校
+- 🚫 **绝对禁止**在搜不到学校时自己去建——正确做法是停下来告诉用户
 
 #### 第五步：设置导师记录的 OneWayLink
 
@@ -684,6 +739,7 @@ Patch 后重新 GET 记录，确认 `Location`、`QS排名`、`国内学校层�
 - 禁止在不创建主表记录的情况下直接设置 OneWayLink（会导致幽灵链接）
 - 禁止在未翻页遍历全部主表记录前就判断"学校不存在"并创建
 - 禁止 OneWayLink 值写成字符串而非数组
+- 🚫 **禁止对主表执行任何写操作**（POST/PATCH/DELETE）。搜不到学校就告诉用户，不自己建
 
 **常见错误**：
 - 不识别学生类型 → 用错字段名 → API 报错或写入无效字段
@@ -811,6 +867,8 @@ for r in verified['data']['records']:
 | Python SSL 失败当链接失效 | `sds.cuhk.edu.cn` Python urllib 报 handshake failure | 换 WebFetch 验证，不直接判 404 |
 | Vika URL 字段 PATCH 静默失败 | `fieldKey="name"` 写入 URL 字段返回 200 但未更新 | 必须用 `fieldKey="id"` + 字段 ID（非字段名） |
 | PATCH 后回读用错键名 | GET 返回字段名键，但用 field ID 去读永远 None | PATCH 前后各拉一次字段列表，回读用当前字段名 |
+| 精确匹配搜不到学校就自建 | 搜 "University of Exeter" 搜不到 "The University of Exeter" → 在主表 POST 创建重复 | 必须用 L1→L2→L3 分层搜索，L2 用不区分大小写子串匹配；搜不到就告诉用户，绝不自建 |
+| 对主表执行写入操作 | POST 到主表新建学校、或 PATCH 修改主表记录 | 🚫 主表是只读参考数据源，任何写操作都是禁止的 |
 
 ---
 
