@@ -134,17 +134,47 @@ locked = [r for r in all_records if r["fields"].get("选导意向（点击选择
 
 在开始任何搜索之前，必须先完成方向覆盖画像。这是防止「某方向搜不到导师」问题的第一道防线——确保每个研究方向都有结构化的关键词和院系映射，后续 Coverage Gate 检查依赖此画像。
 
-**步骤 1：收集方向权重与关键词**
+**步骤 1：收集方向权重与关键词（自动解析优先，避免反问）**
 
-让学生列出所有研究方向，并分配权重（总和 100%）。对每个方向，记录 3-5 个核心英文关键词。
+如果用户的提示词中已包含研究方向和/或权重信息，直接自动解析并生成方向覆盖画像，不必反问用户。仅在方向或关键词确实缺失时才询问。
 
-示例：
+**（A）方向自动识别与翻译**
+
+用户提示词中可能以多种形式给出方向：
+
+| 输入形式 | 解析示例 |
+|----------|----------|
+| 中文方向列表 | 「生物医学光学成像、空芯光纤、SLM加工」→ 3 个方向 |
+| 中文 + 英文混合 | 「optical imaging 生物医学光学」→ 归并为同一方向 |
+| 纯英文 | 「biophotonics, hollow-core fiber, SLM」→ 3 个方向 |
+
+对每个方向，自动生成 3-5 个英文关键词：
+- 中文方向名 → 翻译为英文核心词 → 扩展同义词/缩写
+- 英文方向名 → 直接基于该词扩展同义词/缩写
+- 单个关键词示例：「空芯光纤」→ `hollow-core fiber, photonic crystal fiber, anti-resonant fiber, specialty fiber, microstructured fiber`
+
+**（B）权重自动归一化**
+
+如果用户提供了方向权重（如 `2:2:1` 或 `3:1`），自动解析并归一化：
+
+| 用户输入 | 自动处理 | 归一化结果 |
+|----------|----------|-----------|
+| `2:2:1`（3 个方向） | 求和 = 5，各方向 ÷ 5 | 40% : 40% : 20% |
+| `3:1`（2 个方向） | 求和 = 4，各方向 ÷ 4 | 75% : 25% |
+| `2:2:0`（3 个方向） | 权重为 0 的方向排除，剩余 2:2 归一化 | 50% : 50%（第 3 方向被排除） |
+| `2:2:0:1`（4 个方向） | 权重为 0 的方向排除，剩余 2:2:1 归一化 | 40% : 40% : 20%（权重 0 方向排除） |
+| 未提供权重 | 等权分配 | 若 3 个方向 → 各 33.3%，取整为 33%, 33%, 34% |
+
+**权重为 0 的含义**：`2:2:0` 表示第三个方向完全不考虑（学生不感兴趣或不需要匹配），应直接排除该方向，不参与后续搜索。
+
+如果用户既未提供方向也未提供关键词，则询问用户。
+
+示例（自动解析产出）：
 ```
 方向覆盖画像：
 - 生物医学光学成像 (权重 40%): optical imaging, biophotonics, medical imaging, biomedical optics, OCT
-- 空芯/特种光纤 (权重 30%): hollow-core fiber, photonic crystal fiber, anti-resonant fiber, specialty fiber, microstructured fiber
+- 空芯/特种光纤 (权重 40%): hollow-core fiber, photonic crystal fiber, anti-resonant fiber, specialty fiber, microstructured fiber
 - SLM/激光加工 (权重 20%): spatial light modulator, laser processing, beam shaping, optical trapping, laser fabrication
-- 生物光子学传感 (权重 10%): biosensing, surface plasmon resonance, fiber sensor, Raman sensing, photonic biosensor
 ```
 
 **步骤 2：方向-院系映射预估**
