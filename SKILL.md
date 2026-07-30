@@ -26,9 +26,10 @@ Requires `TAVILY_API_KEY` environment variable. If installed, search automatical
 
 开始搜索任务前，阅读 `references/search-orchestrator.md`。它定义了：
 
+- **方向覆盖画像（Phase 0）**：搜索前收集方向权重与关键词，建立方向-院系映射，防止某方向搜不到导师
 - **状态追踪**：续传中断的搜索，跳过已完成的学校
 - **智能优先级**：按预期产出（P0-P3 层级）对学校排序
-- **分阶段策略**：先快速扫描所有学校（Pass 1），再深入验证有希望的学校（Pass 2）
+- **分阶段策略**：先快速扫描所有学校（Pass 1）→ 方向覆盖检查（Pass 1.5 Coverage Gate）→ 再深入验证有希望的学校（Pass 2）
 
 ---
 
@@ -129,7 +130,46 @@ locked = [r for r in all_records if r["fields"].get("选导意向（点击选择
 
 ## 搜索工作流（Vika 和 Excel 通用）
 
-1. 解析学生背景、研究方向、硬排除条件、目标地区/学校、排名限制
+### Phase 0：方向覆盖画像（搜索前强制执行）
+
+在开始任何搜索之前，必须先完成方向覆盖画像。这是防止「某方向搜不到导师」问题的第一道防线——确保每个研究方向都有结构化的关键词和院系映射，后续 Coverage Gate 检查依赖此画像。
+
+**步骤 1：收集方向权重与关键词**
+
+让学生列出所有研究方向，并分配权重（总和 100%）。对每个方向，记录 3-5 个核心英文关键词。
+
+示例：
+```
+方向覆盖画像：
+- 生物医学光学成像 (权重 40%): optical imaging, biophotonics, medical imaging, biomedical optics, OCT
+- 空芯/特种光纤 (权重 30%): hollow-core fiber, photonic crystal fiber, anti-resonant fiber, specialty fiber, microstructured fiber
+- SLM/激光加工 (权重 20%): spatial light modulator, laser processing, beam shaping, optical trapping, laser fabrication
+- 生物光子学传感 (权重 10%): biosensing, surface plasmon resonance, fiber sensor, Raman sensing, photonic biosensor
+```
+
+**步骤 2：方向-院系映射预估**
+
+对每个方向，预估可能分布的院系（至少 2 个）。这一步确保搜索时不会遗漏跨院系的导师。
+
+| 研究方向 | 应检索的院系（至少 2 个） |
+|----------|--------------------------|
+| 光子学/光纤 | EE, ECE, Physics, Materials, Applied Physics |
+| 生物医学光学 | BME, EE, Biophysics, Life Sciences, Medicine |
+| SLM/激光加工 | ME, MSE, EE, Physics, Manufacturing |
+| 光学成像 | EE, BME, Physics, Computer Science (Vision) |
+| 生物传感 | BME, EE, Chemistry, Bioengineering |
+| 激光/非线性光学 | Physics, EE, Applied Physics, Optoelectronics |
+| 量子光学 | Physics, EE, Applied Physics, Materials |
+
+> 如果学生的方向不在上表中，必须自行推导至少 2 个可能分布的院系。**禁止只锁定 1 个院系就开始搜索。**
+
+**步骤 3：记录到状态文件**
+
+将方向覆盖画像写入 search-state 文件的 `Direction Coverage Profile` 和 `Direction Coverage Tracker` 字段（见 `references/search-orchestrator.md`）。后续 Pass 1 完成后，Coverage Gate 会用这个画像检查每个方向是否有候选。
+
+---
+
+1. 解析学生背景、**方向覆盖画像（Phase 0 产出）**、硬排除条件、目标地区/学校、排名限制
 2. **检测表格格式**（见 `references/spreadsheet-rules.md`）：Vika 模式从 URL 解析 datasheetId；Excel 模式若用户提供模板则沿用其列结构
 3. 优先搜索官方大学来源
 4. **SPA/动态站点**：先查 `references/search-techniques.md` L0-SPA 策略（找替代来源而非死磕 SPA 壳）；若无替代来源再探测 JS bundle 中的 API 端点

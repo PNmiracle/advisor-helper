@@ -49,6 +49,20 @@ Updated: {ISO timestamp}
 - QS range: {min}-{max}
 - Regions: {UK, Australia, ...}
 - Hard exclusions: {list}
+
+## Direction Coverage Profile (Phase 0 产出 — 搜索前必填)
+- 方向A (权重 40%): keywordA1, keywordA2, keywordA3, keywordA4, keywordA5
+- 方向B (权重 30%): keywordB1, keywordB2, keywordB3, keywordB4, keywordB5
+- 方向C (权重 20%): keywordC1, keywordC2, keywordC3, keywordC4, keywordC5
+- 方向D (权重 10%): keywordD1, keywordD2, keywordD3, keywordD4, keywordD5
+
+## Direction Coverage Tracker (Pass 1 后更新 — Coverage Gate 依赖此表)
+| Direction | Weight | Candidates Found | Coverage Status |
+|-----------|--------|-----------------|-----------------|
+| 方向A | 40% | 8 | covered |
+| 方向B | 30% | 0 | MISSING — trigger keyword search |
+| 方向C | 20% | 3 | covered |
+| 方向D | 10% | 2 | covered |
 ```
 
 ### Status Values
@@ -108,6 +122,37 @@ Do NOT deep-search every school in one go. Use a two-pass approach:
 - Output: binary yes/no per school
 - Skip: schools with no relevant department
 
+### Pass 1.5: Coverage Gate（方向覆盖检查 — 强制执行）
+
+Pass 1 快速扫描完成后，**必须执行 Coverage Gate 检查**。这是防止「某方向搜不到导师」问题的第二道防线——Pass 1 的院系驱动搜索天然偏向大规模院系和主导方向，Coverage Gate 用方向关键词反向补全盲区。
+
+**执行步骤：**
+
+1. 统计每个方向的候选人数（按 Direction Coverage Profile 中的方向分类）
+2. 更新状态文件的 Direction Coverage Tracker 表格
+3. 对候选数为 0 的方向，**强制触发关键词驱动发现**（见下方）
+4. Coverage Gate 未通过前（即存在 0 候选方向），不得进入 Pass 2
+
+**判断标准：**
+
+| 方向候选数 | Coverage 状态 | 动作 |
+|-----------|--------------|------|
+| > 0 | covered | 正常进入 Pass 2 |
+| 0（权重 >= 15%） | MISSING | **强制触发关键词驱动发现**，补全后才能进入 Pass 2 |
+| 0（权重 < 15%） | at_risk | 触发关键词驱动发现，但允许 Pass 2 并行进行 |
+
+#### 关键词驱动发现（Keyword-Driven Discovery）
+
+对每个候选数为 0 或明显偏低的方向，执行以下独立搜索轨道：
+
+1. **逐校搜索**：WebSearch `"[方向关键词] professor [学校名]"` — 对目标学校列表逐一搜索
+2. **区域搜索**：WebSearch `"[方向关键词] PhD supervisor [国家/地区]"` — 扩大到区域级别
+3. **学术数据库检查**：搜索 Google Scholar 标签、dblp、OpenReview 等，找该方向的高产研究者
+4. **跨学科研究中心检查**：检查目标学校是否存在 interdisciplinary research center / institute 覆盖该方向（这些中心通常不属于传统院系，但在教师列表中容易被遗漏）
+5. **验证命中结果**：对关键词搜索命中的导师，验证个人主页和 PhD 指导资格（走标准 selection-rules.md 流程）
+
+> 此轨道与「院系列表扫描」并行执行，不依赖于院系列表的完整性。关键词驱动发现是 Coverage Gate 的兜底机制——当院系驱动的搜索遗漏了某个方向时，用方向关键词反向搜索来补全。
+
 ### Pass 2: Deep Verify (only schools that passed Pass 1)
 - For each school with a relevant department: full discovery pipeline
 - Use: API → filter → verify personal pages → fill table
@@ -120,12 +165,22 @@ This prevents wasting 20 minutes deep-searching a school that turns out to have 
 When spawning sub-agents, use this template:
 
 ```
-Task: Search {school_name} for PhD supervisors in {direction}
+Task: Search {school_name} for PhD supervisors matching student directions
 
 School: {full_school_name}
-Target Department: {department_name(s)}
-Student Directions: {list of directions with keywords}
+Target Departments: {department_name(s)} + {cross-department suggestions from Phase 0 mapping}
+Student Directions & Weights:
+- 方向A (权重 40%): 关键词A1, A2, A3, A4, A5
+- 方向B (权重 30%): 关键词B1, B2, B3, B4, B5
+- 方向C (权重 20%): 关键词C1, C2, C3, C4, C5
+- 方向D (权重 10%): 关键词D1, D2, D3, D4, D5
 Hard Exclusions: {list}
+
+搜索要求：
+1. 每个方向至少尝试 2 个不同关键词组合进行 WebSearch
+2. 即使某院系表面不相关，若关键词命中该系教师，也需验证
+3. 报告时需按方向分类统计候选人数
+4. 若某方向候选数为 0，在报告中明确标注
 
 Steps:
 1. Navigate to {school_url} — locate the staff/faculty directory for {department}
@@ -137,10 +192,11 @@ Steps:
 4. Report back in this format:
 
 FOUND:
-- Name | Title | Profile URL | Research Keywords | PhD Supervision Evidence | Match Notes
+- Name | Title | Profile URL | Research Keywords | PhD Supervision Evidence | Matched Direction(s) | Match Notes
 
 NOT FOUND / BLOCKED:
 - Reason (no department, all blocked, no matches, etc.)
+- Per-direction candidate count: 方向A: N, 方向B: N, 方向C: N, 方向D: N
 
 Report back ONLY the structured list above. Do not narrate your process.
 ```
